@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets' as pw;
+import 'package:pdf/widgets.dart' as pw; // ✅ Fixed (.dart added)
 import 'package:printing/printing.dart';
 import 'dart:convert';
 import 'dart:io';
