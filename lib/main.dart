@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets' as pw;
+import 'package:printing/printing.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -852,27 +855,155 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  void _shareReceipt(Map<String, dynamic> receipt) {
-    String text = "=== MARKET RECEIPT ===\n"
-        "Seller: ${receipt['sellerName']}\n"
-        "Waste: ${receipt['wasteType']}\n"
-        "Formula: ${receipt['formulaStr']}\n"
-        "Total Weight: ${receipt['totalKg']} KG\n"
-        "Total Amount: ₦${receipt['grandTotal']}\n"
-        "Time: ${receipt['timestamp']}";
+    Future<void> _shareReceipt(Map<String, dynamic> receipt) async {
+    final pdf = pw.Document();
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFFFDFADB),
-        title: const Text('Shareable Receipt Text'),
-        content: SelectableText(text),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-        ],
+    // Check and load snapped photo if available
+    pw.ImageProvider? imageProvider;
+    if (receipt['imagePath'] != null) {
+      final imageFile = File(receipt['imagePath']);
+      if (imageFile.existsSync()) {
+        imageProvider = pw.MemoryImage(imageFile.readAsBytesSync());
+      }
+    }
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a5, // Moniepoint / POS receipt style dimensions
+        build: (pw.Context context) {
+          return pw.Container(
+            padding: const pw.EdgeInsets.all(20),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.green800, width: 2),
+              borderRadius: pw.BorderRadius.circular(10),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // Receipt Header
+                pw.Center(
+                  child: pw.Text(
+                    'MARKET LEDGER RECEIPT',
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.green800,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Center(
+                  child: pw.Text(
+                    'Official Purchase Document',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Divider(thickness: 1, color: PdfColors.grey400),
+                pw.SizedBox(height: 10),
+
+                // Transaction Details
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Seller Name:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    pw.Text('${receipt['sellerName']}'),
+                  ],
+                ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Waste Category:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    pw.Text('${receipt['wasteType']}'),
+                  ],
+                ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Total Bundles:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    pw.Text('${receipt['totalBundles'] ?? 1}'),
+                  ],
+                ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Weight Breakdown:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    pw.Text('${receipt['formulaStr'] ?? ''}'),
+                  ],
+                ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Total Weight:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    pw.Text('${(receipt['totalKg'] as num).toDouble().toStringAsFixed(2)} KG'),
+                  ],
+                ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Date & Time:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    pw.Text('${receipt['timestamp'].toString().split('T')[0]} ${receipt['timestamp'].toString().split('T')[1].substring(0, 5)}'),
+                  ],
+                ),
+
+                pw.SizedBox(height: 10),
+                pw.Divider(thickness: 1, color: PdfColors.grey400),
+                pw.SizedBox(height: 10),
+
+                // Amount Spent Box
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.green50,
+                    borderRadius: pw.BorderRadius.circular(6),
+                    border: pw.Border.all(color: PdfColors.green300),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('TOTAL SPENT:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.green900)),
+                      pw.Text('₦${(receipt['grandTotal'] as num).toDouble().toStringAsFixed(0)}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
+                    ],
+                  ),
+                ),
+
+                // Attached Photo section (if present)
+                if (imageProvider != null) ...[
+                  pw.SizedBox(height: 12),
+                  pw.Text('Attached Scrap Photo:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.grey800)),
+                  pw.SizedBox(height: 6),
+                  pw.Center(
+                    child: pw.ClipRRect(
+                      horizontalRadius: 6,
+                      verticalRadius: 6,
+                      child: pw.Image(imageProvider, height: 110, fit: pw.BoxFit.cover),
+                    ),
+                  ),
+                ],
+
+                pw.Spacer(),
+                pw.Center(
+                  child: pw.Text('Generated by Market Ledger', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
+
+    // Triggers native share sheet (WhatsApp, Telegram, Save PDF, etc.)
+    await Printing.sharePdf(
+      bytes: await pdf.save(),
+      filename: 'Receipt_${receipt['sellerName'].toString().replaceAll(' ', '_')}.pdf',
+    );
   }
+
 
   @override
   Widget build(BuildContext context) {
