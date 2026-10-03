@@ -599,8 +599,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 }
 
 
-  
-// ======================= DAILY SCHEDULE & HISTORY =======================
+                    
+    
+                // ======================= DAILY SCHEDULE & HISTORY =======================
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({Key? key}) : super(key: key);
 
@@ -642,7 +643,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
     for (var day in historyLogs) {
       DateTime logDate = DateTime.parse(day['timestamp']);
-      // Calculate totals for current week based on selected waste filter
       if (logDate.isAfter(startOfWeek.subtract(const Duration(days: 1)))) {
         List receipts = day['receipts'] ?? [];
         for (var receipt in receipts) {
@@ -656,13 +656,55 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  void _deleteDay(int index) async {
-    setState(() {
-      historyLogs.removeAt(index);
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('history_logs', json.encode(historyLogs));
-    _calculateWeeklySummary();
+  void _deleteReceipt(int dayIndex, Map<String, dynamic> receipt) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFFDFADB),
+        title: const Text('Delete Receipt?'),
+        content: Text('Are you sure you want to delete receipt for ${receipt['sellerName']}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() {
+                var dayLog = historyLogs[dayIndex];
+                List receipts = dayLog['receipts'] ?? [];
+                
+                receipts.removeWhere((r) => r['receiptId'] == receipt['receiptId'] || r == receipt);
+
+                // Recalculate Day Totals
+                double newDayKg = 0;
+                double newDayAmount = 0;
+                int newDayBundles = 0;
+
+                for (var r in receipts) {
+                  newDayKg += (r['totalKg'] as num).toDouble();
+                  newDayAmount += (r['grandTotal'] as num).toDouble();
+                  newDayBundles += (r['totalBundles'] as num).toInt();
+                }
+
+                dayLog['totalKg'] = newDayKg;
+                dayLog['grandTotal'] = newDayAmount;
+                dayLog['totalBundles'] = newDayBundles;
+
+                // Remove day entry if no receipts remain
+                if (receipts.isEmpty) {
+                  historyLogs.removeAt(dayIndex);
+                }
+              });
+
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('history_logs', json.encode(historyLogs));
+              _calculateWeeklySummary();
+            },
+            child: const Text('Delete'),
+          )
+        ],
+      ),
+    );
   }
 
   String _formatDate(String isoString) {
@@ -746,7 +788,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   void _showDayGainCalculator(Map<String, dynamic> dayLog) {
     TextEditingController sellPriceCtrl = TextEditingController();
     
-    // Calculate totals for this day based on active filter
     List receipts = dayLog['receipts'] ?? [];
     double totalKg = 0;
     double grandTotal = 0;
@@ -835,7 +876,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Extract unique waste types from saved logs
     Set<String> wasteCategories = {'All'};
     for (var day in historyLogs) {
       List receipts = day['receipts'] ?? [];
@@ -850,7 +890,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       appBar: AppBar(
         title: Text('History (${selectedWasteFilter.toUpperCase()})'),
       ),
-      // Dynamic Sidebar Drawer for History Filtering
       drawer: Drawer(
         backgroundColor: const Color(0xFFFDFADB),
         child: ListView(
@@ -882,7 +921,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       selectedWasteFilter = cat;
                       _calculateWeeklySummary();
                     });
-                    Navigator.pop(context); // Close side drawer
+                    Navigator.pop(context);
                   },
                 )).toList(),
           ],
@@ -890,7 +929,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
       body: Column(
         children: [
-          // Top Summary Banner updating according to selected waste filter
           Container(
             padding: const EdgeInsets.all(12),
             color: const Color(0xFFE8F5E9),
@@ -921,14 +959,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 var dayLog = historyLogs[index];
                 List receipts = dayLog['receipts'] ?? [];
 
-                // Filter receipts for this day
                 List filteredReceipts = selectedWasteFilter == 'All'
                     ? receipts
                     : receipts.where((r) => r['wasteType'] == selectedWasteFilter).toList();
 
                 if (filteredReceipts.isEmpty) return const SizedBox.shrink();
 
-                // Calculate filtered day totals
                 double dayKg = filteredReceipts.fold(0.0, (sum, r) => sum + (r['totalKg'] as num).toDouble());
                 double dayAmount = filteredReceipts.fold(0.0, (sum, r) => sum + (r['grandTotal'] as num).toDouble());
                 int dayBundles = filteredReceipts.fold(0, (sum, r) => sum + (r['totalBundles'] as num).toInt());
@@ -938,12 +974,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: ExpansionTile(
-                    title: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(_formatDate(dayLog['timestamp']), style: const TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold, fontSize: 16)),
-                        IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _deleteDay(index)),
-                      ],
+                    title: Text(
+                      _formatDate(dayLog['timestamp']),
+                      style: const TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -965,10 +998,25 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                           title: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('${receipt['sellerName']} (${receipt['wasteType']})', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
-                              IconButton(
-                                icon: const Icon(Icons.share, size: 18, color: Colors.blue),
-                                onPressed: () => _shareReceipt(receipt),
+                              Expanded(
+                                child: Text(
+                                  '${receipt['sellerName']} (${receipt['wasteType']})',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.share, size: 18, color: Colors.blue),
+                                    onPressed: () => _shareReceipt(receipt),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                                    onPressed: () => _deleteReceipt(index, receipt),
+                                  ),
+                                ],
                               )
                             ],
                           ),
@@ -1010,5 +1058,3 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 }
-
-                            
