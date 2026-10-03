@@ -24,15 +24,20 @@ jobs:
           flutter-version: '3.16.5'
           channel: 'stable'
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Build APK Release
-        run: flutter build apk --release
+      - name: Create Clean Flutter Project Scaffold
+        run: |
+          # Create a temporary project to get correct android files
+          flutter create temp_app --org com.scrap.tracker --project-name scrap_tracker
+          # Move our custom lib and pubspec into it
+          cp -r lib/* temp_app/lib/
+          cp pubspec.yaml temp_app/pubspec.yaml
+          cd temp_app
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk ../app-release.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
-          
+          path: app-release.apk
