@@ -103,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
             const Text(
-              'MARKET LEDGER',
+              'MASKY RECYLING',
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
             ),
             const SizedBox(height: 50),
