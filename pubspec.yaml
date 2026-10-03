@@ -1,4 +1,4 @@
-name: scrap_record
+name: masky_recycling_record
 description: A local scrap and carton inventory calculator.
 publish_to: 'none'
 version: 1.0.0+1
