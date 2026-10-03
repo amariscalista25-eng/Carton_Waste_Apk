@@ -237,35 +237,97 @@ class CalculatorScreen extends StatefulWidget {
 }
 
 class _CalculatorScreenState extends State<CalculatorScreen> {
-  String selectedWaste = 'Carton';
+    String selectedWaste = 'Carton';
   final TextEditingController _weightCtrl = TextEditingController();
+  final TextEditingController _priceCtrl = TextEditingController();
   List<Map<String, dynamic>> currentBatch = [];
+  bool isPriceLocked = true; // Controls the edit lock
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDraft();
+  }
+
+  Future<void> _loadDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? draft = prefs.getString('calculator_draft');
+    if (draft != null) {
+      setState(() => currentBatch = List<Map<String, dynamic>>.from(json.decode(draft)));
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('calculator_draft', json.encode(currentBatch));
+  }
 
   void _addItem() {
     double? price = widget.wasteTypes[selectedWaste];
     if (price == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User has not set a permanent price for this waste. Please set it in the sidebar.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please set a price first.')));
       return;
     }
     if (_weightCtrl.text.isEmpty) return;
     
     double weight = double.tryParse(_weightCtrl.text) ?? 0.0;
-    
     setState(() {
       currentBatch.add({
         'type': selectedWaste,
         'weight': weight,
         'rate': price,
         'total': weight * price,
-        'time': "${TimeOfDay.now().hour}:${TimeOfDay.now().minute.toString().padLeft(2, '0')} ${TimeOfDay.now().period == DayPeriod.am ? 'AM' : 'PM'}"
+        'time': "${TimeOfDay.now().hour}:${TimeOfDay.now().minute.toString().padLeft(2, '0')}"
       });
       _weightCtrl.clear();
+      _saveDraft(); // Save to draft immediately
     });
   }
 
-  Future<void> _saveBatch() async {
+  void _showReceiptAndSave() {
+    // 1. Auto-Add: If you typed a weight but forgot to press '+', add it now!
+    if (_weightCtrl.text.isNotEmpty) {
+      _addItem();
+    }
+    
     if (currentBatch.isEmpty) return;
 
+    double totalAmount = currentBatch.fold(0.0, (sum, item) => sum + item['total']);
+    double totalKg = currentBatch.fold(0.0, (sum, item) => sum + item['weight']);
+
+    // 2. Show the Receipt Dialog
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Receipt'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Waste: $selectedWaste', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 10),
+            Text('Bundles: ${currentBatch.length}'),
+            Text('Total Weight: ${totalKg.toStringAsFixed(2)} KG'),
+            const Divider(),
+            Text('Grand Total: ₦${totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 20, color: Colors.red, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+            onPressed: () {
+              Navigator.pop(context); // Close receipt
+              _saveBatch(); // Trigger actual save
+            },
+            child: const Text('Save to History'),
+          )
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveBatch() async {
     final prefs = await SharedPreferences.getInstance();
     String? savedHistory = prefs.getString('history_logs');
     List<dynamic> history = savedHistory != null ? json.decode(savedHistory) : [];
@@ -277,9 +339,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     double totalKg = currentBatch.fold(0.0, (sum, item) => sum + item['weight']);
     int totalBundles = currentBatch.length;
 
-    // Check if today already exists in history
     int existingIndex = history.indexWhere((log) => log['dateKey'] == dateKey);
-    
     if (existingIndex >= 0) {
       history[existingIndex]['grandTotal'] += totalAmount;
       history[existingIndex]['totalKg'] += totalKg;
@@ -297,6 +357,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
 
     await prefs.setString('history_logs', json.encode(history));
+    await prefs.remove('calculator_draft'); // Clear draft after saving
     setState(() { currentBatch.clear(); });
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to Daily Schedule!')));
   }
@@ -304,38 +365,78 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   @override
   Widget build(BuildContext context) {
     double? currentPrice = widget.wasteTypes[selectedWaste];
+    if (isPriceLocked && currentPrice != null) {
+      _priceCtrl.text = currentPrice.toString();
+    }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Calculator')),
+      // Adds the sidebar drawer to change waste types
+      drawer: Drawer(
+        backgroundColor: const Color(0xFFFDFADB),
+        child: ListView(
+          children: [
+            const DrawerHeader(child: Text('Select Waste', style: TextStyle(fontSize: 24, color: Color(0xFF2E7D32)))),
+            ...widget.wasteTypes.keys.map((waste) => ListTile(
+              title: Text(waste, style: const TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () {
+                setState(() {
+                  selectedWaste = waste;
+                  isPriceLocked = true; // lock price when switching
+                });
+                Navigator.pop(context); // Close drawer
+              },
+            )).toList()
+          ],
+        ),
+      ),
+      appBar: AppBar(
+        // Puts the selected waste boldly at the top
+        title: Text(selectedWaste.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+        centerTitle: true,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButtonFormField<String>(
-              value: selectedWaste,
-              items: widget.wasteTypes.keys.map((w) => DropdownMenuItem(value: w, child: Text(w))).toList(),
-              onChanged: (val) => setState(() => selectedWaste = val!),
-              decoration: const InputDecoration(labelText: 'Select Waste Type'),
-            ),
-            const SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text('Price ₦/KG', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        Text(currentPrice == null ? 'Not Set' : currentPrice.toString(), style: const TextStyle(fontSize: 18, color: Colors.grey)),
+                        // Shows text when locked, opens a keyboard field when unlocked
+                        isPriceLocked 
+                          ? Text(currentPrice == null ? 'Not Set' : currentPrice.toString(), style: const TextStyle(fontSize: 18, color: Colors.grey))
+                          : TextField(
+                              controller: _priceCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(isDense: true, border: InputBorder.none),
+                              style: const TextStyle(fontSize: 18),
+                            ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 16),
-                Icon(currentPrice == null ? Icons.lock_open : Icons.lock, color: Colors.orange),
+                // The lock button logic
+                IconButton(
+                  icon: Icon(isPriceLocked ? Icons.lock : Icons.lock_open, color: Colors.orange, size: 30),
+                  onPressed: () async {
+                    if (!isPriceLocked) {
+                      // Save the new edited price
+                      double? newPrice = double.tryParse(_priceCtrl.text);
+                      widget.wasteTypes[selectedWaste] = newPrice;
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('waste_types', json.encode(widget.wasteTypes)); // save permanently
+                    }
+                    setState(() => isPriceLocked = !isPriceLocked);
+                  },
+                )
               ],
             ),
             const SizedBox(height: 20),
@@ -348,7 +449,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     decoration: InputDecoration(
                       labelText: 'Weight (KG)',
                       border: OutlineInputBorder(borderSide: const BorderSide(color: Colors.deepPurple), borderRadius: BorderRadius.circular(8)),
-                      enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.deepPurple), borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ),
@@ -364,8 +464,26 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            Text('Current Batch: ${currentBatch.length} Bundles', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
-            const Spacer(),
+            Text('Current Draft: ${currentBatch.length} Bundles', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+            
+            // This Expanded section shows the live list of everything you added
+            Expanded(
+              child: ListView.builder(
+                itemCount: currentBatch.length,
+                itemBuilder: (context, index) {
+                  var item = currentBatch[index];
+                  return Card(
+                    color: Colors.white,
+                    child: ListTile(
+                      title: Text('${item['weight']} KG'),
+                      subtitle: Text('₦${item['rate']}/KG'),
+                      trailing: Text('₦${item['total'].toStringAsFixed(0)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                    ),
+                  );
+                },
+              ),
+            ),
+            
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2E7D32),
@@ -373,8 +491,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 18),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               ),
-              onPressed: _saveBatch,
-              child: const Text('CHECK PRICE & SAVE', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              onPressed: _showReceiptAndSave, // Now triggers the receipt dialog first
+              child: const Text('CALCULATE & SAVE', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             )
           ],
         ),
@@ -484,10 +602,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               double revenue = sellPrice * totalKg;
               double profit = revenue - grandTotal;
               
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Revenue: ₦${revenue.toStringAsFixed(2)} | Profit: ₦${profit.toStringAsFixed(2)}'), duration: const Duration(seconds: 5)),
+                            Navigator.pop(context); // Close the first dialog
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: Colors.white,
+                  title: const Text('Gain Receipt', style: TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold)),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total Spent: ₦${grandTotal.toStringAsFixed(2)}'),
+                      Text('Total Revenue: ₦${revenue.toStringAsFixed(2)}'),
+                      const Divider(),
+                      Text('Net Profit: ₦${profit.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, color: Colors.green, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))
+                  ],
+                ),
               );
+
             },
             child: const Text('Calculate'),
           )
