@@ -626,7 +626,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     String? savedHistory = prefs.getString('history_logs');
     if (savedHistory != null) {
       setState(() {
-        historyLogs = List<Map<String, dynamic>>::from(json.decode(savedHistory));
+        historyLogs = List<Map<String, dynamic>>.from(json.decode(savedHistory));
         _calculateWeeklySummary();
       });
     }
