@@ -598,6 +598,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 }
 
+
+  
 // ======================= DAILY SCHEDULE & HISTORY =======================
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({Key? key}) : super(key: key);
@@ -608,9 +610,9 @@ class ScheduleScreen extends StatefulWidget {
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Map<String, dynamic>> historyLogs = [];
-  double weeklyKg = 0;
-  double weeklyAmount = 0;
-  int weeklyBundles = 0;
+  double filteredKg = 0;
+  double filteredAmount = 0;
+  int filteredBundles = 0;
   String selectedWasteFilter = 'All';
 
   @override
@@ -624,7 +626,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     String? savedHistory = prefs.getString('history_logs');
     if (savedHistory != null) {
       setState(() {
-        historyLogs = List<Map<String, dynamic>>.from(json.decode(savedHistory));
+        historyLogs = List<Map<String, dynamic>>::from(json.decode(savedHistory));
         _calculateWeeklySummary();
       });
     }
@@ -633,23 +635,31 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   void _calculateWeeklySummary() {
     DateTime now = DateTime.now();
     DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    
-    weeklyKg = 0;
-    weeklyAmount = 0;
-    weeklyBundles = 0;
 
-    for (var log in historyLogs) {
-      DateTime logDate = DateTime.parse(log['timestamp']);
+    filteredKg = 0;
+    filteredAmount = 0;
+    filteredBundles = 0;
+
+    for (var day in historyLogs) {
+      DateTime logDate = DateTime.parse(day['timestamp']);
+      // Calculate totals for current week based on selected waste filter
       if (logDate.isAfter(startOfWeek.subtract(const Duration(days: 1)))) {
-        weeklyKg += (log['totalKg'] as num).toDouble();
-        weeklyAmount += (log['grandTotal'] as num).toDouble();
-        weeklyBundles += (log['totalBundles'] as num).toInt(); 
+        List receipts = day['receipts'] ?? [];
+        for (var receipt in receipts) {
+          if (selectedWasteFilter == 'All' || receipt['wasteType'] == selectedWasteFilter) {
+            filteredKg += (receipt['totalKg'] as num).toDouble();
+            filteredAmount += (receipt['grandTotal'] as num).toDouble();
+            filteredBundles += (receipt['totalBundles'] as num).toInt();
+          }
+        }
       }
     }
   }
 
   void _deleteDay(int index) async {
-    setState(() { historyLogs.removeAt(index); });
+    setState(() {
+      historyLogs.removeAt(index);
+    });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('history_logs', json.encode(historyLogs));
     _calculateWeeklySummary();
@@ -686,7 +696,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             Text('Total Bought: ${(receipt['totalKg'] as num).toDouble().toStringAsFixed(2)} KG'),
             Text('Amount Spent: ₦${(receipt['grandTotal'] as num).toDouble().toStringAsFixed(2)}'),
             const SizedBox(height: 16),
-            TextField(controller: sellPriceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Your Selling Price ₦/KG')),
+            TextField(
+              controller: sellPriceCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Your Selling Price ₦/KG'),
+            ),
           ],
         ),
         actions: [
@@ -696,10 +710,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               double sellPrice = double.tryParse(sellPriceCtrl.text) ?? 0;
               double totalKg = (receipt['totalKg'] as num).toDouble();
               double grandTotal = (receipt['grandTotal'] as num).toDouble();
-              
+
               double revenue = sellPrice * totalKg;
               double profit = revenue - grandTotal;
-              
+
               Navigator.pop(context);
               showDialog(
                 context: context,
@@ -718,9 +732,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       Text('Net Profit: ₦${profit.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, color: Colors.green, fontWeight: FontWeight.bold)),
                     ],
                   ),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))
-                  ],
+                  actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
                 ),
               );
             },
@@ -733,18 +745,29 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   void _showDayGainCalculator(Map<String, dynamic> dayLog) {
     TextEditingController sellPriceCtrl = TextEditingController();
-    double totalKg = (dayLog['totalKg'] as num).toDouble();
-    double grandTotal = (dayLog['grandTotal'] as num).toDouble();
+    
+    // Calculate totals for this day based on active filter
+    List receipts = dayLog['receipts'] ?? [];
+    double totalKg = 0;
+    double grandTotal = 0;
+
+    for (var r in receipts) {
+      if (selectedWasteFilter == 'All' || r['wasteType'] == selectedWasteFilter) {
+        totalKg += (r['totalKg'] as num).toDouble();
+        grandTotal += (r['grandTotal'] as num).toDouble();
+      }
+    }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFFFDFADB),
-        title: Text('Gain for Entire Day (${_formatDate(dayLog['timestamp'])})'),
+        title: Text('Gain for Day ($selectedWasteFilter)'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('Date: ${_formatDate(dayLog['timestamp'])}'),
             Text('Total Day KG: ${totalKg.toStringAsFixed(2)} KG'),
             Text('Total Day Spent: ₦${grandTotal.toStringAsFixed(2)}'),
             const SizedBox(height: 16),
@@ -758,7 +781,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               double sellPrice = double.tryParse(sellPriceCtrl.text) ?? 0;
               double revenue = sellPrice * totalKg;
               double profit = revenue - grandTotal;
-              
+
               Navigator.pop(context);
               showDialog(
                 context: context,
@@ -769,7 +792,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Date: ${_formatDate(dayLog['timestamp'])}'),
+                      Text('Category: $selectedWasteFilter'),
                       Text('Total KG Sold: ${totalKg.toStringAsFixed(2)} KG'),
                       Text('Total Cost: ₦${grandTotal.toStringAsFixed(2)}'),
                       Text('Total Revenue: ₦${revenue.toStringAsFixed(2)}'),
@@ -812,51 +835,81 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Extract unique waste types from saved logs
     Set<String> wasteCategories = {'All'};
     for (var day in historyLogs) {
       List receipts = day['receipts'] ?? [];
       for (var r in receipts) {
-        if (r['wasteType'] != null) wasteCategories.add(r['wasteType']);
+        if (r['wasteType'] != null && r['wasteType'].toString().isNotEmpty) {
+          wasteCategories.add(r['wasteType']);
+        }
       }
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Daily Schedule')),
+      appBar: AppBar(
+        title: Text('History (${selectedWasteFilter.toUpperCase()})'),
+      ),
+      // Dynamic Sidebar Drawer for History Filtering
+      drawer: Drawer(
+        backgroundColor: const Color(0xFFFDFADB),
+        child: ListView(
+          children: [
+            const DrawerHeader(
+              decoration: BoxDecoration(color: Color(0xFF2E7D32)),
+              child: Center(
+                child: Text(
+                  'Filter History',
+                  style: TextStyle(fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            ...wasteCategories.map((cat) => ListTile(
+                  leading: Icon(
+                    cat == 'All' ? Icons.all_inclusive : Icons.inventory_2,
+                    color: selectedWasteFilter == cat ? const Color(0xFF2E7D32) : Colors.grey,
+                  ),
+                  title: Text(
+                    cat,
+                    style: TextStyle(
+                      fontWeight: selectedWasteFilter == cat ? FontWeight.bold : FontWeight.normal,
+                      color: selectedWasteFilter == cat ? const Color(0xFF2E7D32) : Colors.black,
+                    ),
+                  ),
+                  trailing: selectedWasteFilter == cat ? const Icon(Icons.check, color: Color(0xFF2E7D32)) : null,
+                  onTap: () {
+                    setState(() {
+                      selectedWasteFilter = cat;
+                      _calculateWeeklySummary();
+                    });
+                    Navigator.pop(context); // Close side drawer
+                  },
+                )).toList(),
+          ],
+        ),
+      ),
       body: Column(
         children: [
+          // Top Summary Banner updating according to selected waste filter
           Container(
             padding: const EdgeInsets.all(12),
             color: const Color(0xFFE8F5E9),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: Column(
               children: [
-                Column(children: [const Text('Week KG', style: TextStyle(color: Colors.grey)), Text(weeklyKg.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
-                Column(children: [const Text('Week Spent', style: TextStyle(color: Colors.grey)), Text('₦${weeklyAmount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
-                Column(children: [const Text('Bundles', style: TextStyle(color: Colors.grey)), Text(weeklyBundles.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
+                Text(
+                  'This Week Summary ($selectedWasteFilter)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32), fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(children: [const Text('Total KG', style: TextStyle(color: Colors.grey, fontSize: 12)), Text(filteredKg.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
+                    Column(children: [const Text('Total Spent', style: TextStyle(color: Colors.grey, fontSize: 12)), Text('₦${filteredAmount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
+                    Column(children: [const Text('Bundles', style: TextStyle(color: Colors.grey, fontSize: 12)), Text(filteredBundles.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
+                  ],
+                ),
               ],
-            ),
-          ),
-          
-          Container(
-            height: 50,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: wasteCategories.map((cat) {
-                bool isSelected = selectedWasteFilter == cat;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: FilterChip(
-                    selected: isSelected,
-                    label: Text(cat, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontWeight: FontWeight.bold)),
-                    selectedColor: const Color(0xFF2E7D32),
-                    backgroundColor: const Color(0xFFE0E0E0),
-                    onSelected: (bool selected) {
-                      setState(() => selectedWasteFilter = cat);
-                    },
-                  ),
-                );
-              }).toList(),
             ),
           ),
 
@@ -868,11 +921,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 var dayLog = historyLogs[index];
                 List receipts = dayLog['receipts'] ?? [];
 
+                // Filter receipts for this day
                 List filteredReceipts = selectedWasteFilter == 'All'
                     ? receipts
                     : receipts.where((r) => r['wasteType'] == selectedWasteFilter).toList();
 
                 if (filteredReceipts.isEmpty) return const SizedBox.shrink();
+
+                // Calculate filtered day totals
+                double dayKg = filteredReceipts.fold(0.0, (sum, r) => sum + (r['totalKg'] as num).toDouble());
+                double dayAmount = filteredReceipts.fold(0.0, (sum, r) => sum + (r['grandTotal'] as num).toDouble());
+                int dayBundles = filteredReceipts.fold(0, (sum, r) => sum + (r['totalBundles'] as num).toInt());
 
                 return Card(
                   color: const Color(0xFFF3E5F5),
@@ -889,11 +948,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${(dayLog['totalKg'] as num).toDouble().toStringAsFixed(2)} KG | ₦${(dayLog['grandTotal'] as num).toDouble().toStringAsFixed(0)} | ${dayLog['totalBundles']} Bundles'),
+                        Text('${dayKg.toStringAsFixed(2)} KG | ₦${dayAmount.toStringAsFixed(0)} | $dayBundles Bundles'),
                         const SizedBox(height: 4),
                         InkWell(
                           onTap: () => _showDayGainCalculator(dayLog),
-                          child: const Text('📊 Calculate Gain for Today', style: TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold, fontSize: 13)),
+                          child: Text('📊 Calculate Gain for Today ($selectedWasteFilter)', style: const TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold, fontSize: 13)),
                         )
                       ],
                     ),
@@ -951,3 +1010,5 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 }
+
+                            
