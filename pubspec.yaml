@@ -1,4 +1,4 @@
-name: scrap_tracker
+name: Carton Record
 description: A local scrap and carton inventory calculator.
 publish_to: 'none'
 version: 1.0.0+1
@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   shared_preferences: ^2.1.1
   image_picker: ^1.0.7
+  pdf: ^3.10.8
+  printing: ^5.11.1
 
 dev_dependencies:
   flutter_test:
