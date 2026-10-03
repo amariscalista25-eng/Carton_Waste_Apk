@@ -297,15 +297,125 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
   }
 
-  void _showReceiptAndSave() {
-    // Auto-add text typed in the box before saving
+    void _showReceiptAndSave() async {
     if (_weightCtrl.text.isNotEmpty) {
       _addItem();
     }
-    
     if (currentBatch.isEmpty) return;
 
+    final prefs = await SharedPreferences.getInstance();
+    List<String> savedSellers = prefs.getStringList('saved_sellers') ?? [];
     TextEditingController sellerCtrl = TextEditingController();
+
+    double totalAmount = currentBatch.fold(0.0, (sum, item) => sum + (item['total'] as num).toDouble());
+    double totalKg = currentBatch.fold(0.0, (sum, item) => sum + (item['weight'] as num).toDouble());
+    String formulaStr = currentBatch.map((e) => "${e['weight']}").join(" + ") + " KG";
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFFFDFADB),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Confirm Receipt', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: sellerCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Seller Name (e.g. Mama Sikiru)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  if (savedSellers.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text('Saved Sellers:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: savedSellers.map((seller) => Padding(
+                          padding: const EdgeInsets.only(right: 6.0),
+                          child: ActionChip(
+                            label: Text(seller, style: const TextStyle(fontSize: 12)),
+                            backgroundColor: const Color(0xFFE8F5E9),
+                            onPressed: () {
+                              setDialogState(() {
+                                sellerCtrl.text = seller;
+                              });
+                            },
+                          ),
+                        )).toList(),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Text('Waste: $selectedWaste', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text('Bundles: ${currentBatch.length}', style: const TextStyle(fontSize: 14)),
+                  const SizedBox(height: 6),
+                  const Text('Weight Formula:', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
+                  Text(formulaStr, style: const TextStyle(fontSize: 13, color: Colors.deepPurple, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text('Total Weight: ${totalKg.toStringAsFixed(2)} KG', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const Divider(),
+                  Text('Grand Total: ₦${totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 22, color: Colors.red, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                        icon: const Icon(Icons.camera_alt, size: 18),
+                        label: const Text('Add Photo'),
+                        onPressed: () async {
+                          await _pickImage();
+                          setDialogState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      if (_imagePath != null)
+                        const Icon(Icons.check_circle, color: Colors.green, size: 28),
+                    ],
+                  ),
+                  if (_imagePath != null) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(File(_imagePath!), height: 80, width: 80, fit: BoxFit.cover),
+                    )
+                  ]
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                onPressed: () async {
+                  String seller = sellerCtrl.text.trim();
+                  if (seller.isEmpty) seller = "Batch Purchase";
+                  
+                  // Save seller name to permanent list if new
+                  if (seller != "Batch Purchase" && !savedSellers.contains(seller)) {
+                    savedSellers.add(seller);
+                    await prefs.setStringList('saved_sellers', savedSellers);
+                  }
+                  
+                  Navigator.pop(context);
+                  _saveBatch(seller, formulaStr);
+                },
+                child: const Text('Save to History'),
+              )
+            ],
+          );
+        },
+      ),
+    );
+  }
+
     double totalAmount = currentBatch.fold(0.0, (sum, item) => sum + (item['total'] as num).toDouble());
     double totalKg = currentBatch.fold(0.0, (sum, item) => sum + (item['weight'] as num).toDouble());
     
@@ -586,6 +696,87 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   double weeklyKg = 0;
   double weeklyAmount = 0;
   int weeklyBundles = 0;
+  String selectedWasteFilter = 'All';
+
+  void _showDayGainCalculator(Map<String, dynamic> dayLog) {
+    TextEditingController sellPriceCtrl = TextEditingController();
+    double totalKg = (dayLog['totalKg'] as num).toDouble();
+    double grandTotal = (dayLog['grandTotal'] as num).toDouble();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFFDFADB),
+        title: Text('Gain for Entire Day (${_formatDate(dayLog['timestamp'])})'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Total Day KG: ${totalKg.toStringAsFixed(2)} KG'),
+            Text('Total Day Spent: ₦${grandTotal.toStringAsFixed(2)}'),
+            const SizedBox(height: 16),
+            TextField(controller: sellPriceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Selling Price ₦/KG')),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+            onPressed: () {
+              double sellPrice = double.tryParse(sellPriceCtrl.text) ?? 0;
+              double revenue = sellPrice * totalKg;
+              double profit = revenue - grandTotal;
+              
+              Navigator.pop(context);
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: const Color(0xFFFDFADB),
+                  title: const Text('Daily Gain Summary', style: TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold)),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Date: ${_formatDate(dayLog['timestamp'])}'),
+                      Text('Total KG Sold: ${totalKg.toStringAsFixed(2)} KG'),
+                      Text('Total Cost: ₦${grandTotal.toStringAsFixed(2)}'),
+                      Text('Total Revenue: ₦${revenue.toStringAsFixed(2)}'),
+                      const Divider(),
+                      Text('Net Daily Profit: ₦${profit.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, color: Colors.green, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
+                ),
+              );
+            },
+            child: const Text('Calculate Day Profit'),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _shareReceipt(Map<String, dynamic> receipt) {
+    String text = "=== MARKET RECEIPT ===\n"
+        "Seller: ${receipt['sellerName']}\n"
+        "Waste: ${receipt['wasteType']}\n"
+        "Formula: ${receipt['formulaStr']}\n"
+        "Total Weight: ${receipt['totalKg']} KG\n"
+        "Total Amount: ₦${receipt['grandTotal']}\n"
+        "Time: ${receipt['timestamp']}";
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFFDFADB),
+        title: const Text('Shareable Receipt Text'),
+        content: SelectableText(text),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
 
   @override
   void initState() {
@@ -708,10 +899,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Extract unique waste types from history for filtering tabs
+    Set<String> wasteCategories = {'All'};
+    for (var day in historyLogs) {
+      List receipts = day['receipts'] ?? [];
+      for (var r in receipts) {
+        if (r['wasteType'] != null) wasteCategories.add(r['wasteType']);
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Daily Schedule')),
       body: Column(
         children: [
+          // Weekly Summary Banner
           Container(
             padding: const EdgeInsets.all(12),
             color: const Color(0xFFE8F5E9),
@@ -724,6 +925,32 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ],
             ),
           ),
+          
+          // Waste Type Filter Row (Carton vs Nylon vs All)
+          Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: wasteCategories.map((cat) {
+                bool isSelected = selectedWasteFilter == cat;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: FilterChip(
+                    selected: isSelected,
+                    label: Text(cat, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontWeight: FontWeight.bold)),
+                    selectedColor: const Color(0xFF2E7D32),
+                    backgroundColor: const Color(0xFFE0E0E0),
+                    onSelected: (bool selected) {
+                      setState(() => selectedWasteFilter = cat);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          // Daily History List
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(12),
@@ -731,6 +958,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               itemBuilder: (context, index) {
                 var dayLog = historyLogs[index];
                 List receipts = dayLog['receipts'] ?? [];
+
+                // Filter receipts according to selected Waste Category (Carton / Nylon)
+                List filteredReceipts = selectedWasteFilter == 'All'
+                    ? receipts
+                    : receipts.where((r) => r['wasteType'] == selectedWasteFilter).toList();
+
+                if (filteredReceipts.isEmpty) return const SizedBox.shrink();
 
                 return Card(
                   color: const Color(0xFFF3E5F5),
@@ -744,14 +978,34 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _deleteDay(index)),
                       ],
                     ),
-                    subtitle: Text('${(dayLog['totalKg'] as num).toDouble().toStringAsFixed(2)} KG | ₦${(dayLog['grandTotal'] as num).toDouble().toStringAsFixed(0)} | ${dayLog['totalBundles']} Bundles'),
-                    children: receipts.map<Widget>((receipt) {
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${(dayLog['totalKg'] as num).toDouble().toStringAsFixed(2)} KG | ₦${(dayLog['grandTotal'] as num).toDouble().toStringAsFixed(0)} | ${dayLog['totalBundles']} Bundles'),
+                        const SizedBox(height: 4),
+                        // Calculate Gain for Entire Day Button
+                        InkWell(
+                          onTap: () => _showDayGainCalculator(dayLog),
+                          child: const Text('📊 Calculate Gain for Today', style: TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold, fontSize: 13)),
+                        )
+                      ],
+                    ),
+                    children: filteredReceipts.map<Widget>((receipt) {
                       return Container(
                         margin: const EdgeInsets.all(8),
                         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
                         child: ExpansionTile(
                           leading: const Icon(Icons.receipt_long, color: Color(0xFF2E7D32)),
-                          title: Text('${receipt['sellerName']} (${receipt['wasteType']})', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+                          title: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('${receipt['sellerName']} (${receipt['wasteType']})', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+                              IconButton(
+                                icon: const Icon(Icons.share, size: 18, color: Colors.blue),
+                                onPressed: () => _shareReceipt(receipt),
+                              )
+                            ],
+                          ),
                           subtitle: Text('Formula: ${receipt['formulaStr'] ?? ''}\nTotal: ₦${(receipt['grandTotal'] as num).toDouble().toStringAsFixed(0)}'),
                           children: [
                             if (receipt['imagePath'] != null && File(receipt['imagePath']).existsSync()) ...[
@@ -789,4 +1043,5 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
     );
   }
+
 }
