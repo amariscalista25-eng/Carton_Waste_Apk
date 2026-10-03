@@ -26,7 +26,7 @@ jobs:
 
       - name: Create Clean Flutter Project Scaffold & Patch SDK
         run: |
-          flutter create temp_app --org com.scrap.tracker --project-name scrap_tracker
+          flutter create temp_app --org com.scrap.tracker --project-name masky_recycling
           cp -r lib/* temp_app/lib/
           cp pubspec.yaml temp_app/pubspec.yaml
           
