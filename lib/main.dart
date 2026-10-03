@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           minimumSize: const Size(double.infinity, 50),
         ),
-        onTap: onTap,
+        onPressed: onTap, // FIXED: Changed onTap to onPressed
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -425,9 +425,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     for (var log in historyLogs) {
       DateTime logDate = DateTime.parse(log['timestamp']);
       if (logDate.isAfter(startOfWeek.subtract(const Duration(days: 1)))) {
-        weeklyKg += log['totalKg'];
-        weeklyAmount += log['grandTotal'];
-        weeklyBundles += log['totalBundles'];
+        // FIXED: Added explicit type conversions for safety
+        weeklyKg += (log['totalKg'] as num).toDouble();
+        weeklyAmount += (log['grandTotal'] as num).toDouble();
+        weeklyBundles += (log['totalBundles'] as num).toInt(); 
       }
     }
   }
@@ -466,8 +467,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Total Bought: ${log['totalKg'].toStringAsFixed(2)} KG'),
-            Text('Amount Spent: ₦${log['grandTotal'].toStringAsFixed(2)}'),
+            Text('Total Bought: ${(log['totalKg'] as num).toDouble().toStringAsFixed(2)} KG'),
+            Text('Amount Spent: ₦${(log['grandTotal'] as num).toDouble().toStringAsFixed(2)}'),
             const SizedBox(height: 16),
             TextField(controller: sellPriceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Your Selling Price ₦/KG')),
           ],
@@ -477,8 +478,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
             onPressed: () {
               double sellPrice = double.tryParse(sellPriceCtrl.text) ?? 0;
-              double revenue = sellPrice * log['totalKg'];
-              double profit = revenue - log['grandTotal'];
+              double totalKg = (log['totalKg'] as num).toDouble();
+              double grandTotal = (log['grandTotal'] as num).toDouble();
+              
+              double revenue = sellPrice * totalKg;
+              double profit = revenue - grandTotal;
+              
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('Revenue: ₦${revenue.toStringAsFixed(2)} | Profit: ₦${profit.toStringAsFixed(2)}'), duration: const Duration(seconds: 5)),
@@ -524,7 +529,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               itemBuilder: (context, index) {
                 var log = historyLogs[index];
                 return Card(
-                  color: const Color(0xFFF3E5F5), // Light purple tint from screenshot
+                  color: const Color(0xFFF3E5F5), // Light purple tint
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: ExpansionTile(
@@ -535,7 +540,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _deleteDay(index)),
                       ],
                     ),
-                    subtitle: Text('${log['totalKg'].toStringAsFixed(2)} KG | ₦${log['grandTotal'].toStringAsFixed(0)} | ${log['totalBundles']} Bundles'),
+                    subtitle: Text('${(log['totalKg'] as num).toDouble().toStringAsFixed(2)} KG | ₦${(log['grandTotal'] as num).toDouble().toStringAsFixed(0)} | ${log['totalBundles']} Bundles'),
                     children: [
                       Container(
                         color: const Color(0xFFFDFADB),
@@ -546,7 +551,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 leading: const Icon(Icons.shopping_bag, color: Color(0xFF4CAF50)),
                                 title: Text('1 Bundle (${item['weight']} KG)'),
                                 subtitle: Text('Price: ₦${item['rate']}/KG @ ${item['time']}'),
-                                trailing: Text('₦${item['total'].toStringAsFixed(0)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                trailing: Text('₦${(item['total'] as num).toDouble().toStringAsFixed(0)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                               );
                             }).toList(),
                             TextButton.icon(
@@ -567,4 +572,4 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
     );
   }
-}
+}                                                                                                                                                                     
